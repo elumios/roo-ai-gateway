@@ -11,16 +11,19 @@ export default function handler(req, res) {
       {
         id: "openai/gpt-4o-mini",
         object: "model",
+        created: 1700000000,
         owned_by: "openai"
       },
       {
         id: "google/gemini-2.0-flash-exp",
         object: "model",
+        created: 1700000000,
         owned_by: "google"
       },
       {
         id: "deepseek/deepseek-chat",
         object: "model",
+        created: 1700000000,
         owned_by: "deepseek"
       }
     ]
