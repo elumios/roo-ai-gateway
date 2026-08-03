@@ -1,0 +1,12 @@
+POST https://roo-ai-gateway.vercel.app/api/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "deepseek/deepseek-chat-v3-0324",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Привет! Кто ты?"
+    }
+  ]
+}
