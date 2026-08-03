@@ -1,15 +1,29 @@
 export default async function handler(req, res) {
 
+  // CORS
   res.setHeader(
     "Access-Control-Allow-Origin",
     "*"
   );
 
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "POST, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+
+
+  // Preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
 
+  // Только POST
   if (req.method !== "POST") {
     return res.status(405).json({
       error: {
@@ -21,6 +35,18 @@ export default async function handler(req, res) {
 
   try {
 
+    const body = req.body;
+
+
+    if (!body || !body.messages) {
+      return res.status(400).json({
+        error: {
+          message: "Missing messages"
+        }
+      });
+    }
+
+
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -31,15 +57,92 @@ export default async function handler(req, res) {
             `Bearer ${process.env.OPENROUTER_API_KEY}`,
 
           "Content-Type":
-            "application/json"
+            "application/json",
+
+          "HTTP-Referer":
+            "https://roo-ai-gateway.vercel.app",
+
+          "X-Title":
+            "Roo AI Gateway"
         },
 
-        body: JSON.stringify(req.body)
+
+        body: JSON.stringify({
+          model: body.model || "openai/gpt-4o-mini",
+          messages: body.messages,
+
+          temperature:
+            body.temperature,
+
+          max_tokens:
+            body.max_tokens,
+
+          stream:
+            body.stream || false,
+
+          tools:
+            body.tools,
+
+          tool_choice:
+            body.tool_choice
+        })
       }
     );
 
 
-    const data = await response.json();
+    // Если потоковый ответ
+    if (
+      body.stream === true
+    ) {
+
+      res.setHeader(
+        "Content-Type",
+        "text/event-stream"
+      );
+
+      res.setHeader(
+        "Cache-Control",
+        "no-cache"
+      );
+
+      res.setHeader(
+        "Connection",
+        "keep-alive"
+      );
+
+
+      const reader =
+        response.body.getReader();
+
+
+      while (true) {
+
+        const {
+          done,
+          value
+        } = await reader.read();
+
+
+        if (done) {
+          break;
+        }
+
+
+        res.write(
+          Buffer.from(value)
+        );
+
+      }
+
+
+      return res.end();
+
+    }
+
+
+    // Обычный JSON ответ
+    const data =
+      await response.json();
 
 
     return res
@@ -49,11 +152,19 @@ export default async function handler(req, res) {
 
   } catch (error) {
 
+
+    console.error(
+      error
+    );
+
+
     return res.status(500).json({
       error: {
-        message: error.message
+        message:
+          error.message
       }
     });
 
   }
+
 }
