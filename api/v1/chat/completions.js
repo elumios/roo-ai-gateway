@@ -1,11 +1,7 @@
-export default async function handler(req, res) {
-
-  console.log("METHOD:", req.method);
-  console.log("BODY:", req.body);
-
+export default function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.status(200).json({
-    method: req.method,
-    body: req.body
+    status: "working",
+    method: req.method
   });
-
 }
