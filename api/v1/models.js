@@ -21,6 +21,12 @@ export default function handler(req, res) {
         owned_by: "google"
       },
       {
+        id: "google/gemini-2.5-flash",
+        object: "model",
+        created: 1700000000,
+        owned_by: "google"
+      },
+      {
         id: "deepseek/deepseek-chat",
         object: "model",
         created: 1700000000,
