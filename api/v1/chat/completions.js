@@ -30,7 +30,7 @@ export default async function handler(req, res) {
 
 
   // =========================
-  // Проверка Gateway Key
+  // Gateway protection
   // =========================
 
   const gatewayKey =
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
 
   // =========================
-  // Только POST
+  // POST only
   // =========================
 
   if (req.method !== "POST") {
@@ -88,9 +88,19 @@ export default async function handler(req, res) {
     }
 
 
-    // =========================
-    // OpenRouter request
-    // =========================
+    const model =
+      body.model ||
+      "openai/gpt-4o-mini";
+
+
+    // Gemini через OpenRouter
+    // иногда ломается со streaming
+    const useStream =
+      model.includes("gemini")
+        ? false
+        : body.stream || false;
+
+
 
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -117,9 +127,8 @@ export default async function handler(req, res) {
 
         body: JSON.stringify({
 
-          model:
-            body.model ||
-            "openai/gpt-4o-mini",
+          model: model,
+
 
           messages:
             body.messages,
@@ -134,7 +143,7 @@ export default async function handler(req, res) {
 
 
           stream:
-            body.stream || false,
+            useStream,
 
 
           tools:
@@ -150,13 +159,12 @@ export default async function handler(req, res) {
     );
 
 
+
     // =========================
     // Streaming response
     // =========================
 
-    if (
-      body.stream === true
-    ) {
+    if (useStream === true) {
 
 
       res.setHeader(
@@ -164,10 +172,12 @@ export default async function handler(req, res) {
         "text/event-stream"
       );
 
+
       res.setHeader(
         "Cache-Control",
         "no-cache"
       );
+
 
       res.setHeader(
         "Connection",
@@ -186,7 +196,7 @@ export default async function handler(req, res) {
           done,
           value
         } =
-          await reader.read();
+        await reader.read();
 
 
         if (done) {
@@ -208,12 +218,23 @@ export default async function handler(req, res) {
 
 
     // =========================
-    // Обычный JSON ответ
+    // JSON response
     // =========================
-
 
     const data =
       await response.json();
+
+
+    console.log(
+      "MODEL:",
+      model
+    );
+
+
+    console.log(
+      "OPENROUTER RESPONSE:",
+      JSON.stringify(data)
+    );
 
 
     return res
