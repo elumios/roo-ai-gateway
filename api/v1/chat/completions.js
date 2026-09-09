@@ -34,7 +34,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = req.body;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
     if (!body || !body.messages) {
       return res.status(400).json({
@@ -55,24 +55,24 @@ export default async function handler(req, res) {
     let headers;
     let requestBody;
 
+    const commonBody = {
+      model: model,
+      messages: body.messages,
+      temperature: body.temperature,
+      max_tokens: body.max_tokens,
+      stream: useStream,
+      tools: body.tools,
+      tool_choice: body.tool_choice
+    };
+
     if (isMetaModel) {
-      // Meta API - напрямую
       apiUrl = "https://api.llama.com/compat/v1/chat/completions";
       headers = {
         "Authorization": `Bearer ${process.env.META_API_KEY}`,
         "Content-Type": "application/json"
       };
-      requestBody = {
-        model: model,
-        messages: body.messages,
-        temperature: body.temperature,
-        max_tokens: body.max_tokens,
-        stream: useStream,
-        tools: body.tools,
-        tool_choice: body.tool_choice
-      };
+      requestBody = commonBody;
     } else {
-      // OpenRouter - все остальное
       apiUrl = "https://openrouter.ai/api/v1/chat/completions";
       headers = {
         "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
@@ -80,15 +80,7 @@ export default async function handler(req, res) {
         "HTTP-Referer": "https://roo-ai-gateway.vercel.app",
         "X-Title": "Roo AI Gateway"
       };
-      requestBody = {
-        model: model,
-        messages: body.messages,
-        temperature: body.temperature,
-        max_tokens: body.max_tokens,
-        stream: useStream,
-        tools: body.tools,
-        tool_choice: body.tool_choice
-      };
+      requestBody = commonBody;
     }
 
     const response = await fetch(apiUrl, {
@@ -98,20 +90,25 @@ export default async function handler(req, res) {
     });
 
     // =========================
-    // Streaming response
+    // Streaming response - FIX
     // =========================
     if (useStream === true) {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(Buffer.from(value));
+      // Вот тут был баг: getReader() ломает Vercel. Правильно - pipe
+      if (response.body) {
+        // Node 18+ / Vercel
+        const { Readable } = await import('node:stream');
+        const nodeStream = Readable.fromWeb(response.body);
+        nodeStream.pipe(res);
+        return;
+      } else {
+        const data = await response.text();
+        res.write(data);
+        return res.end();
       }
-      return res.end();
     }
 
     // =========================
@@ -120,7 +117,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     console.log("MODEL:", model, "| ROUTED TO:", isMetaModel ? "META" : "OPENROUTER");
-    console.log("RESPONSE:", JSON.stringify(data).slice(0, 1000));
+    if (!response.ok) console.error("UPSTREAM ERROR:", JSON.stringify(data).slice(0, 1000));
 
     return res.status(response.status).json(data);
 
