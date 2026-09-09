@@ -31,6 +31,18 @@ export default function handler(req, res) {
         object: "model",
         created: 1700000000,
         owned_by: "deepseek"
+      },
+      {
+        id: "meta/muse-spark-1.3",
+        object: "model",
+        created: 1700000000,
+        owned_by: "meta"
+      },
+      {
+        id: "meta/muse-spark-1.2",
+        object: "model",
+        created: 1700000000,
+        owned_by: "meta"
       }
     ]
   });
