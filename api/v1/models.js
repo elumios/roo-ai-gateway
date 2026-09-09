@@ -43,7 +43,10 @@ export default function handler(req, res) {
         object: "model",
         created: 1700000000,
         owned_by: "meta"
-      }
+      },
+      { id: "google/gemma-4-26b-a4b-it:free", object: "model", owned_by: "google" },
+      { id: "google/gemma-4-31b-it:free", object: "model", owned_by: "google" },
+      { id: "nex-agi/nex-n2-pro:free", object: "model", owned_by: "nex-agi" },
     ]
   });
 
