@@ -8,53 +8,85 @@ export default async function handler(req, res) {
   if (gatewayKey !== process.env.GATEWAY_KEY) {
     return res.status(401).json({ error: { message: "Invalid gateway key" } });
   }
+  if (req.method !== "POST") return res.status(405).json({ error: { message: "Only POST allowed" } });
 
-  // Vercel body parser fix
-  let body = req.body;
-  if (!body || typeof body === 'string') {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const raw = Buffer.concat(chunks).toString();
-    try { body = JSON.parse(raw); } catch {}
-  }
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    if (!body?.messages) return res.status(400).json({ error: { message: "Missing messages" } });
 
-  console.log("INCOMING BODY KEYS:", body ? Object.keys(body) : "NO BODY", "MODEL:", body?.model);
+    const model = body.model || "openai/gpt-4o-mini";
+    const isMeta = model.startsWith("meta/");
+    const useStream = model.includes("gemini") ? false : body.stream || false;
 
-  if (!body?.messages) {
-    console.error("MISSING MESSAGES, BODY:", JSON.stringify(body).slice(0, 500));
-    return res.status(400).json({ error: { message: "Missing messages" } });
-  }
+    // === ФИКС ПУСТОГО ОТВЕТА ===
+    // Убираем пустые tools и null max_tokens - из-за них free модели отдают []
+    const cleanBody = {
+      model: model,
+      messages: body.messages,
+      stream: useStream,
+    };
+    if (body.temperature != null) cleanBody.temperature = body.temperature;
+    if (body.max_tokens) cleanBody.max_tokens = body.max_tokens;
+    if (body.tools && body.tools.length > 0) {
+      cleanBody.tools = body.tools;
+      if (body.tool_choice) cleanBody.tool_choice = body.tool_choice;
+    }
 
-  const model = body.model || "openai/gpt-4o-mini";
-  const isMeta = model.startsWith("meta/");
-  const useStream = false; // пока без стрима для дебага
-
-  const cleanBody = { model, messages: body.messages, stream: false };
-  if (body.temperature != null) cleanBody.temperature = body.temperature;
-  if (body.max_tokens) cleanBody.max_tokens = body.max_tokens;
-  if (body.tools?.length > 0) {
-    cleanBody.tools = body.tools;
-    cleanBody.tool_choice = body.tool_choice;
-  }
-
-  const apiUrl = isMeta 
-    ? "https://api.llama.com/compat/v1/chat/completions"
-    : "https://openrouter.ai/api/v1/chat/completions";
-  
-  const headers = isMeta
-    ? { "Authorization": `Bearer ${process.env.META_API_KEY}`, "Content-Type": "application/json" }
-    : { 
+    let apiUrl, headers;
+    if (isMeta) {
+      apiUrl = "https://api.llama.com/compat/v1/chat/completions";
+      headers = { "Authorization": `Bearer ${process.env.META_API_KEY}`, "Content-Type": "application/json" };
+    } else {
+      apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+      headers = {
         "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "https://roo-ai-gateway.vercel.app",
         "X-Title": "Roo AI Gateway"
       };
+    }
 
-  console.log("FETCHING:", apiUrl, "MODEL:", model);
-  const response = await fetch(apiUrl, { method: "POST", headers, body: JSON.stringify(cleanBody) });
-  const data = await response.json();
-  
-  console.log("UPSTREAM STATUS:", response.status, "MODEL:", model, "CHOICES:", data.choices?.length, "FULL:", JSON.stringify(data).slice(0, 3000));
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(cleanBody)
+    });
 
-  return res.status(response.status).json(data);
+    if (useStream) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      if (response.body) {
+        const { Readable } = await import('node:stream');
+        Readable.fromWeb(response.body).pipe(res);
+        return;
+      }
+    }
+
+    const data = await response.json();
+    console.log("MODEL:", model, "STATUS:", response.status, "DATA:", JSON.stringify(data).slice(0, 2000));
+
+    if (!response.ok) return res.status(response.status).json(data);
+
+    // Если OpenRouter вернул пустой choices - отдаем ошибку человеческим текстом, чтобы Roo Code показал ее
+    if (!data.choices || data.choices.length === 0) {
+      return res.status(200).json({
+        id: data.id || "chatcmpl-error",
+        object: "chat.completion",
+        created: Date.now(),
+        model: model,
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: `Upstream returned empty. Full upstream: ${JSON.stringify(data).slice(0, 1000)}` },
+          finish_reason: "stop"
+        }]
+      });
+    }
+
+    return res.status(response.status).json(data);
+
+  } catch (error) {
+    console.error("Gateway error:", error);
+    return res.status(500).json({ error: { message: error.message } });
+  }
 }
