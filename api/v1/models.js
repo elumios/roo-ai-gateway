@@ -51,12 +51,6 @@ export default function handler(req, res) {
         object: "model",
         created: 1700000000,
         owned_by: "nex-agi"
-      },
-      {
-        id: "meta/muse-spark-1.3",
-        object: "model",
-        created: 1700000000,
-        owned_by: "meta"
       }
     ]
   });
